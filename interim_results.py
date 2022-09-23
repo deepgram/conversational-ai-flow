@@ -2,13 +2,10 @@ import pyaudio
 import asyncio
 import sys
 import websockets
-import time
 import json
 import beepy
 import shutil
 import argparse
-
-SILENCE_INTERVAL = 2.0
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -23,11 +20,7 @@ def callback(input_data, frame_count, time_info, status_flag):
     audio_queue.put_nowait(input_data)
     return (input_data, pyaudio.paContinue)
 
-async def run(key):
-    clock_cursor = 0.
-    audio_cursor = 0.
-    transcript_cursor = 0.
-
+async def run(key, silence_interval):
     async with websockets.connect(
         'wss://api.deepgram.com/v1/listen?interim_results=true&encoding=linear16&sample_rate=16000&channels=1', 
         extra_headers={
@@ -54,20 +47,15 @@ async def run(key):
             stream.close()
 
         async def sender(ws):
-            nonlocal clock_cursor, audio_cursor, transcript_cursor
-            clock_start = time.perf_counter()
             try:
                 while True:
                     data = await audio_queue.get()
-                    clock_cursor = time.perf_counter() - clock_start
-                    audio_cursor += float(len(data)) / float(RATE) / 2.0
                     await ws.send(data)
             except Exception as e:
                 print(f'Error while sending: {str(e)}')
                 raise
 
         async def receiver(ws):
-            nonlocal clock_cursor, audio_cursor, transcript_cursor
             transcript = ''
             last_word_end = 0.0
             latest_final_result_processed = False
@@ -78,29 +66,29 @@ async def run(key):
 
                 if msg['is_final'] and len(msg['channel']['alternatives'][0]['transcript']) > 0:
                     latest_final_result_processed = False
-                    transcript += ' '
+                    if len(transcript):
+                        transcript += ' '
                     transcript += msg['channel']['alternatives'][0]['transcript']
                     last_word_end = msg['channel']['alternatives'][0]['words'][-1]['end']
-                    line = f'Clock: {clock_cursor:07.3f}, Audio: {audio_cursor:07.3f}, Transcript: {transcript_cursor:07.3f}; {transcript}'
-                    print(line)
+                    print(transcript)
                     # using end='\r' doesn't work if the line wraps
                     # this moves the cursor up and overwrites the line regardless of length
                     # https://stackoverflow.com/a/47170056
-                    print("\033[{}A".format(len(line) // int(terminal_size.columns) + 1), end='')
+                    print("\033[{}A".format(len(transcript) // int(terminal_size.columns) + 1), end='')
 
                 elif not msg['is_final']:
                     if len(msg['channel']['alternatives'][0]['transcript']) > 0:
                         current_word_begin = msg['channel']['alternatives'][0]['words'][0]['start']
-                        if current_word_begin - last_word_end > SILENCE_INTERVAL:
+                        if current_word_begin - last_word_end > silence_interval:
                             if len(transcript) > 0:
-                                print(f'Clock: {clock_cursor:07.3f}, Audio: {audio_cursor:07.3f}, Transcript: {transcript_cursor:07.3f}; {transcript}')
+                                print(transcript)
                                 beepy.beep(sound=1)
                                 transcript = ''
                             latest_final_result_processed = True
                     else:
-                        if transcript_cursor - last_word_end > SILENCE_INTERVAL:
+                        if transcript_cursor - last_word_end > silence_interval:
                             if len(transcript) > 0:
-                                print(f'Clock: {clock_cursor:07.3f}, Audio: {audio_cursor:07.3f}, Transcript: {transcript_cursor:07.3f}; {transcript}')
+                                print(transcript)
                                 beepy.beep(sound=1)
                                 transcript = ''
                             latest_final_result_processed = True
@@ -117,12 +105,13 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description='Submits data to the real-time streaming endpoint.')
     parser.add_argument('-k', '--key', required=True, help='YOUR_DEEPGRAM_API_KEY (authorization)')
+    parser.add_argument('-s', '--silence', required=False, help='A float representing the number of seconds of silence to wait before playing a beep. Defaults to 2.0.', default=2.0)
     return parser.parse_args()
 
 def main():
     args = parse_args()
 
-    asyncio.run(run(args.key))
+    asyncio.run(run(args.key, float(args.silence)))
 
 if __name__ == '__main__':
     sys.exit(main() or 0)
