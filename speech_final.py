@@ -48,7 +48,7 @@ async def run(key):
                     data = await audio_queue.get()
                     await ws.send(data)
             except Exception as e:
-                print('Error while sending: ', + string(e))
+                print('Error while sending: '.format(str(e)))
                 raise
 
         async def receiver(ws):
