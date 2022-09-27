@@ -83,7 +83,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    asyncio.run(run(args.key))
+    asyncio.get_event_loop().run_until_complete(run(args.key))
 
 if __name__ == '__main__':
     sys.exit(main() or 0)
