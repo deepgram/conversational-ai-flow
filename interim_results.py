@@ -58,41 +58,67 @@ async def run(key, silence_interval):
         async def receiver(ws):
             transcript = ''
             last_word_end = 0.0
-            latest_final_result_processed = False
-            async for msg in ws:
-                msg = json.loads(msg)
+            should_beep = False
+            is_silence = False
 
-                transcript_cursor = msg['start'] + msg['duration']
+            async for message in ws:
+                print(is_silence)
+                message = json.loads(message)
 
-                if msg['is_final'] and len(msg['channel']['alternatives'][0]['transcript']) > 0:
-                    latest_final_result_processed = False
-                    if len(transcript):
-                        transcript += ' '
-                    transcript += msg['channel']['alternatives'][0]['transcript']
-                    last_word_end = msg['channel']['alternatives'][0]['words'][-1]['end']
-                    print(transcript)
-                    # using end='\r' doesn't work if the line wraps
-                    # this moves the cursor up and overwrites the line regardless of length
-                    # https://stackoverflow.com/a/47170056
-                    print("\033[{}A".format(len(transcript) // int(terminal_size.columns) + 1), end='')
+                transcript_cursor = message['start'] + message['duration']
 
-                elif not msg['is_final']:
-                    if len(msg['channel']['alternatives'][0]['transcript']) > 0:
-                        current_word_begin = msg['channel']['alternatives'][0]['words'][0]['start']
-                        if current_word_begin - last_word_end > silence_interval:
-                            if len(transcript) > 0:
-                                print(transcript)
-                                beepy.beep(sound=1)
-                                transcript = ''
-                            latest_final_result_processed = True
-                    else:
-                        if transcript_cursor - last_word_end > silence_interval:
-                            if len(transcript) > 0:
-                                print(transcript)
-                                beepy.beep(sound=1)
-                                transcript = ''
-                            latest_final_result_processed = True
+                # if there are any words in the message, prepare to check
+                # for a long enough silence
+                if len(message['channel']['alternatives'][0]['words']) > 0:
+                    is_silence = False
+                    
+                    # handle transcript printing for final messages
+                    if message['is_final']:
+                        if len(transcript):
+                            transcript += ' '
+                        transcript += message['channel']['alternatives'][0]['transcript']
+                        print(transcript)
+                        # overwrite the line regardless of length
+                        # https://stackoverflow.com/a/47170056
+                        print("\033[{}A".format(len(transcript) // int(terminal_size.columns) + 1), end='')
 
+
+                    # if there is more than 1 word in the message, 
+                    # look to see if there is a gap of silence_interval seconds 
+                    # between any of the words
+                    if len(message['channel']['alternatives'][0]['words']) > 1:
+                        previous_word_end = message['channel']['alternatives'][0]['words'][0]['end']
+                        
+                        for word in message['channel']['alternatives'][0]['words']:
+                            current_word_start = word['start']
+                            if current_word_start - previous_word_end >= silence_interval:
+                                should_beep = True
+
+                            previous_word_end = word['end']
+
+                    # if the last word in a previous message is silence_interval seconds
+                    # older than the first word in this message
+                    current_word_begin = message['channel']['alternatives'][0]['words'][0]['start']
+                    if current_word_begin - last_word_end >= silence_interval and last_word_end != 0:
+                        should_beep = True
+                    
+                    last_word_end = message['channel']['alternatives'][0]['words'][-1]['end']
+                        
+                # if there were no words in this message, check if the the last word
+                # in a previous message is silence_interval or more seconds older 
+                # than the timestamp at the end of this message
+                elif transcript_cursor - last_word_end >= silence_interval and last_word_end != 0 and not is_silence:
+                    last_word_end = 0
+                    should_beep = True
+                    is_silence = True
+
+                if should_beep:
+                    beepy.beep(sound=1)
+                    should_beep = False
+                    is_silence = True
+                    transcript = ''
+                    print('')
+                    
 
         await asyncio.wait([
             asyncio.ensure_future(microphone()),
