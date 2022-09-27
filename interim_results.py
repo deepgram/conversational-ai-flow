@@ -67,8 +67,6 @@ async def run(key, silence_interval):
 
                 # if there are any words in the message
                 if len(message['channel']['alternatives'][0]['words']) > 0:
-                    silence_messages_in_a_row = 0
-
                     # handle transcript printing for final messages
                     if message['is_final']:
                         if len(transcript):
@@ -82,7 +80,7 @@ async def run(key, silence_interval):
                     # if the last word in a previous message is silence_interval seconds
                     # older than the first word in this message (and if that last word hasn't already triggered a beep)
                     current_word_begin = message['channel']['alternatives'][0]['words'][0]['start']
-                    if current_word_begin - last_word_end >= silence_interval and last_word_end != 0:
+                    if current_word_begin - last_word_end >= silence_interval and last_word_end != 0.0:
                         should_beep = True
 
                     last_word_end = message['channel']['alternatives'][0]['words'][-1]['end']
@@ -90,8 +88,8 @@ async def run(key, silence_interval):
                     # if there were no words in this message, check if the the last word
                     # in a previous message is silence_interval or more seconds older
                     # than the timestamp at the end of this message (if that last word hasn't already triggered a beep)
-                    if transcript_cursor - last_word_end >= silence_interval and last_word_end != 0:
-                        last_word_end = 0
+                    if transcript_cursor - last_word_end >= silence_interval and last_word_end != 0.0:
+                        last_word_end = 0.0
                         should_beep = True
 
                 if should_beep:
