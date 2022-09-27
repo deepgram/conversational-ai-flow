@@ -52,7 +52,7 @@ async def run(key, silence_interval):
                     data = await audio_queue.get()
                     await ws.send(data)
             except Exception as e:
-                print(f'Error while sending: {str(e)}')
+                print('Error while sending: '.format(str(e)))
                 raise
 
         async def receiver(ws):
