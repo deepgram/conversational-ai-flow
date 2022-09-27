@@ -22,7 +22,7 @@ async def run(key):
     extra_headers={
         'Authorization': 'Token {}'.format(key)
     }
-    async with websockets.connect('wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&interim_results=false', extra_headers = extra_headers) as ws:
+    async with websockets.connect('wss://api.deepgram.com/v1/listen?endpointing=true&encoding=linear16&sample_rate=16000&channels=1&interim_results=false', extra_headers = extra_headers) as ws:
         async def microphone():
             audio = pyaudio.PyAudio()
             stream = audio.open(
